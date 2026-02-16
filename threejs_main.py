@@ -743,7 +743,7 @@ def main():
         x, y, z, pdf = x[mask], y[mask], z[mask], pdf[mask]
     
     # Display info
-    orbital_names = ['s', 'p', 'd', 'f', 'g', 'h', 'i']
+    orbital_names = 'spdfghijklmnop'
     max_extent = max(np.max(np.abs(x)), np.max(np.abs(y)), np.max(np.abs(z)))
     st.info(f"{n}{orbital_names[l]} **Orbital** | (n,l,m) = ({n},{l},{m}) | {len(x):,}e | Extent: ~{max_extent:.2f} Bohr radii")
     
