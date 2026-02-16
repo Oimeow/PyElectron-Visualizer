@@ -13,15 +13,19 @@ a0 = 1.0  # Bohr's constant (atomic radius)
 
 
 # -- Precompute factorials --
-@st.cache_data
-def precompute_factorials(max_n=10):
-    return {i: factorial(i) for i in range(max_n * 2 + 10)}
-
-FACTORIAL_CACHE = precompute_factorials()
+FACTORIAL_CACHE = [factorial(i) for i in range(30)]
 
 
 # -- Radial Wavefunction --
 def R_nl(r, n, l):
+    """
+    Radial component of hydrogen atom wavefunction
+    
+    :param r: radial distance from nucleus
+    :param n: principal energy level integer (quantum number)
+    :param l: azimuthal/angular momentum integer describing shape of orbitals (quantum number)
+    :return: radial wavefunction value at distance r
+    """
     rho = 2*r/(n*a0)
     prefactor = np.sqrt(
         (2/(n*a0))**3 *
@@ -33,6 +37,15 @@ def R_nl(r, n, l):
 
 
 def sample_r_optimized(n, l, N):
+    """
+    Optimized rejection sampling for radial distance
+    Uses larger batches and vectorized operations
+    
+    :param n: principal energy level integer (quantum number)
+    :param l: azimuthal/angular momentum integer describing shape of orbitals (quantum number)
+    :param N: Sample size (e.g., 50_000)
+    :return: array of N radial distance samples
+    """
     r_max = 20*n
     r_samples = []
     batch_size = max(N * 5, 10000)
@@ -51,6 +64,15 @@ def sample_r_optimized(n, l, N):
 
 
 def sample_angles_optimized(l, m, N):
+    """
+    Optimized rejection sampling for angular coordinates
+    Uses spherical harmonics for probability distribution
+    
+    :param l: azimuthal/angular momentum integer describing shape of orbitals (quantum number)
+    :param m: magnetic quantum number describing orientation of orbital in space (quantum number)
+    :param N: Sample size (e.g., 50_000)
+    :return: tuple of (theta, phi) arrays with N samples each
+    """
     th_samples = []
     phi_samples = []
     
@@ -78,6 +100,16 @@ def sample_angles_optimized(l, m, N):
 
 @st.cache_data(show_spinner=False)
 def sample_orbital_optimized(n, l, m, N):
+    """
+    Generate samples from hydrogen orbital wavefunction
+    Combines radial and angular sampling with probability density calculation
+    
+    :param n: principal energy level integer (quantum number)
+    :param l: azimuthal/angular momentum integer describing shape of orbitals (quantum number)
+    :param m: magnetic quantum number describing orientation of orbital in space (quantum number)
+    :param N: Sample size (e.g., 50_000)
+    :return: tuple of (x, y, z, pdf) where pdf is probability density |ψ|²
+    """
     r = sample_r_optimized(n, l, N)
     th, phi = sample_angles_optimized(l, m, N)
     
@@ -97,7 +129,21 @@ def sample_orbital_optimized(n, l, m, N):
 def create_threejs_viewer(x, y, z, pdf, particle_size, opacity, colormap='viridis', 
                           camera_state=None, rotation_sensitivity=1.0, 
                           pan_sensitivity=1.0, zoom_sensitivity=1.0, color_scale=1.0):
-    """Create Three.js HTML viewer with persistent camera state and 3D spheres"""
+    """
+    Create Three.js HTML viewer with persistent camera state and 3D spheres
+    
+    :param x, y, z: Cartesian coordinates of orbital points
+    :param pdf: Probability density values for each point
+    :param particle_size: Size of rendered spheres
+    :param opacity: Transparency of spheres (0-1)
+    :param colormap: Name of colormap to use
+    :param camera_state: Dictionary with camera position and rotation
+    :param rotation_sensitivity: Mouse rotation speed multiplier
+    :param pan_sensitivity: Mouse pan speed multiplier
+    :param zoom_sensitivity: Mouse zoom speed multiplier
+    :param color_scale: Power scaling for color mapping (higher = more saturated colors)
+    :return: HTML string for Three.js viewer
+    """
     
     # Calculate bounding box for scale reference
     max_extent = max(np.max(np.abs(x)), np.max(np.abs(y)), np.max(np.abs(z)))
@@ -112,60 +158,64 @@ def create_threejs_viewer(x, y, z, pdf, particle_size, opacity, colormap='viridi
     # Create positions array (interleaved x,y,z)
     positions = np.column_stack([x, y, z]).flatten().tolist()
     
-    # Create colors based on PDF with expanded colormap options
+    # Define colormap gradients (color stops from low to high)
+    colormaps = {
+        'viridis': [(0.267004, 0.004874, 0.329415), (0.282623, 0.140926, 0.457517), 
+                    (0.253935, 0.265254, 0.529983), (0.206756, 0.371758, 0.553117),
+                    (0.163625, 0.471133, 0.558148), (0.127568, 0.566949, 0.550556),
+                    (0.134692, 0.658636, 0.517649), (0.266941, 0.748751, 0.440573),
+                    (0.477504, 0.821444, 0.318195), (0.741388, 0.873449, 0.149561),
+                    (0.993248, 0.906157, 0.143936)],
+        'plasma': [(0.050383, 0.029803, 0.527975), (0.285282, 0.011105, 0.595428),
+                   (0.476205, 0.011783, 0.619659), (0.647343, 0.111307, 0.570634),
+                   (0.786283, 0.207078, 0.489221), (0.888941, 0.317654, 0.398063),
+                   (0.957854, 0.447483, 0.326634), (0.987622, 0.594620, 0.290139),
+                   (0.982894, 0.755750, 0.302830), (0.939173, 0.907731, 0.433714),
+                   (0.940015, 0.975158, 0.131326)],
+        'inferno': [(0.001462, 0.000466, 0.013866), (0.087411, 0.044556, 0.224813),
+                    (0.258234, 0.038571, 0.406485), (0.416331, 0.090203, 0.432943),
+                    (0.578304, 0.148039, 0.404411), (0.735683, 0.215906, 0.330245),
+                    (0.865006, 0.316822, 0.226055), (0.952552, 0.457757, 0.131326),
+                    (0.987622, 0.645320, 0.039886), (0.988362, 0.809365, 0.145357),
+                    (0.988362, 0.998364, 0.644924)],
+        'magma': [(0.001462, 0.000466, 0.013866), (0.081029, 0.041426, 0.220124),
+                  (0.235739, 0.057873, 0.417331), (0.382914, 0.102815, 0.493666),
+                  (0.520908, 0.166606, 0.513531), (0.658463, 0.240746, 0.476930),
+                  (0.800215, 0.334051, 0.402597), (0.904281, 0.458512, 0.351413),
+                  (0.967983, 0.611140, 0.427397), (0.994738, 0.780018, 0.618099),
+                  (0.987053, 0.991438, 0.749504)],
+        'turbo': [(0.18995, 0.07176, 0.23217), (0.13840, 0.25205, 0.58634),
+                  (0.13211, 0.46452, 0.75466), (0.27596, 0.66014, 0.75151),
+                  (0.53779, 0.79978, 0.58085), (0.78932, 0.85495, 0.34893),
+                  (0.96696, 0.82256, 0.13046), (0.98447, 0.64624, 0.09766),
+                  (0.88836, 0.45096, 0.13974), (0.72573, 0.27349, 0.17687),
+                  (0.49602, 0.01960, 0.01893)],
+        'hot': [(0.0, 0.0, 0.0), (0.5, 0.0, 0.0), (1.0, 0.0, 0.0),
+                (1.0, 0.5, 0.0), (1.0, 1.0, 0.0), (1.0, 1.0, 1.0)],
+        'jet': [(0.0, 0.0, 0.5), (0.0, 0.0, 1.0), (0.0, 0.5, 1.0),
+                (0.0, 1.0, 1.0), (0.5, 1.0, 0.5), (1.0, 1.0, 0.0),
+                (1.0, 0.5, 0.0), (1.0, 0.0, 0.0), (0.5, 0.0, 0.0)]
+    }
+    
+    # Get gradient for selected colormap
+    gradient = colormaps.get(colormap, colormaps['viridis'])
+    
+    # Create colors by interpolating through gradient
     colors = []
     for p in pdf_scaled:
-        if colormap == 'viridis':
-            r = 0.267 + 0.005 * p + 0.322 * p**2
-            g = 0.005 + 0.549 * p + 0.319 * p**2
-            b = 0.329 + 0.569 * p - 0.535 * p**2
-        elif colormap == 'plasma':
-            r = 0.050 + 0.900 * p
-            g = 0.030 + 0.870 * p**3
-            b = 0.528 + 0.472 * (1-p)
-        elif colormap == 'inferno':
-            r = 0.001462 + 0.998538 * p
-            g = 0.000466 + 0.998534 * p**4
-            b = 0.013866 + 0.762 * p**2
-        elif colormap == 'magma':
-            r = 0.001462 + 0.995 * p**0.5
-            g = 0.001466 + 0.92 * p**3
-            b = 0.017422 + 0.55 * p
-        elif colormap == 'turbo':
-            r = 0.19 + 0.81 * np.sin(p * np.pi - 0.5)
-            g = 0.25 + 0.75 * np.sin(p * np.pi)
-            b = 0.95 - 0.55 * p
-        elif colormap == 'hot':
-            r = min(1.0, 2.5 * p)
-            g = max(0.0, 2.5 * p - 1.0)
-            b = max(0.0, 2.5 * p - 2.0)
-        elif colormap == 'cool':
-            r = p
-            g = 1.0 - p
-            b = 1.0
-        elif colormap == 'rainbow':
-            hue = p * 0.8  # 0 to 0.8 (red to violet)
-            if hue < 0.2:
-                r, g, b = 1.0, hue * 5, 0.0
-            elif hue < 0.4:
-                r, g, b = 1.0 - (hue - 0.2) * 5, 1.0, 0.0
-            elif hue < 0.6:
-                r, g, b = 0.0, 1.0, (hue - 0.4) * 5
-            else:
-                r, g, b = (hue - 0.6) * 5, 1.0 - (hue - 0.6) * 5, 1.0
-        elif colormap == 'jet':
-            if p < 0.25:
-                r, g, b = 0.0, 0.0, 0.5 + 2.0 * p
-            elif p < 0.5:
-                r, g, b = 0.0, 4.0 * (p - 0.25), 1.0
-            elif p < 0.75:
-                r, g, b = 4.0 * (p - 0.5), 1.0, 1.0 - 4.0 * (p - 0.5)
-            else:
-                r, g, b = 1.0, 1.0 - 4.0 * (p - 0.75), 0.0
-        else:  # default viridis
-            r = 0.267 + 0.005 * p + 0.322 * p**2
-            g = 0.005 + 0.549 * p + 0.319 * p**2
-            b = 0.329 + 0.569 * p - 0.535 * p**2
+        # Map p (0-1) to position in gradient
+        idx_float = p * (len(gradient) - 1)
+        idx_low = int(np.floor(idx_float))
+        idx_high = min(idx_low + 1, len(gradient) - 1)
+        t = idx_float - idx_low  # Interpolation factor
+        
+        # Linear interpolation between two gradient stops
+        color_low = gradient[idx_low]
+        color_high = gradient[idx_high]
+        
+        r = color_low[0] + t * (color_high[0] - color_low[0])
+        g = color_low[1] + t * (color_high[1] - color_low[1])
+        b = color_low[2] + t * (color_high[2] - color_low[2])
         
         colors.extend([r, g, b])
     
@@ -185,8 +235,6 @@ def create_threejs_viewer(x, y, z, pdf, particle_size, opacity, colormap='viridi
             'magma': '#000004, #3b0f70, #8c2981, #de4968, #fe9f6d, #fcfdbf',
             'turbo': '#30123b, #4777ef, #1ac7c2, #a0fc3c, #faba39, #e8584a',
             'hot': '#000000, #ff0000, #ffff00, #ffffff',
-            'cool': '#00ffff, #ff00ff',
-            'rainbow': '#ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff',
             'jet': '#000080, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000, #800000'
         }
         return gradients.get(cmap, gradients['viridis'])
@@ -584,17 +632,6 @@ def main():
             cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="white" style="mix-blend-mode: difference"/></svg>') 8 8, auto !important;
         }
         
-        /* Reduce top margin of main page */
-        .main .block-container {
-            padding-top: 1rem !important;  /* Default is ~5rem, reduce to 1rem or 0.5rem */
-        }
-        
-        /* Remove title margin if needed */
-        h1 {
-            margin-top: 0 !important;
-            padding-top: 0 !important;
-        }
-
         /* Sidebar spacing adjustments */
         .stSlider > div > div > div {
             padding-top: 0.25rem !important;
@@ -631,7 +668,7 @@ def main():
     
     # Sidebar Controls
     st.sidebar.header("Quantum Numbers")
-    n = st.sidebar.slider('n', 1, 7, 2, step=1, key='n_slider')
+    n = st.sidebar.slider('n', 1, 10, 2, step=1, key='n_slider')
     
     # Handle l slider with persistence
     l_max = n - 1
@@ -672,15 +709,15 @@ def main():
     st.sidebar.divider()
     st.sidebar.subheader("Visuals")
     
-    particle_size = st.sidebar.slider("Size", 0.1, 10.0, 1.0, step=0.1, key='particle_size')
-    opacity = st.sidebar.slider("Opacity", 0.1, 1.0, 0.5, step=0.05, key='opacity')
+    particle_size = st.sidebar.slider("Size", 0.1, 10.0, 1.5, step=0.1, key='particle_size')
+    opacity = st.sidebar.slider("Opacity", 0.1, 1.0, 1.0, step=0.05, key='opacity')
     probability_filter = st.sidebar.slider("Filter", 0.0, 0.99, 0.0, step=0.01, key='prob_filter')
     
     colormap = st.sidebar.selectbox("Colormap", 
                                      ['viridis', 'plasma', 'inferno', 'magma', 'turbo', 
-                                      'cool', 'hot', 'rainbow', 'jet'], key='colormap')
+                                      'hot', 'jet'], key='colormap')
     
-    color_scale = st.sidebar.slider("Color Scale", 0.1, 5.0, 1.0, step=0.1, key='color_scale')
+    color_scale = st.sidebar.slider("Color Scale", 0.1, 5.0, 3.0, step=0.1, key='color_scale')
     
     st.sidebar.divider()
     st.sidebar.subheader("Controls")
@@ -708,7 +745,7 @@ def main():
     # Display info
     orbital_names = ['s', 'p', 'd', 'f', 'g', 'h', 'i']
     max_extent = max(np.max(np.abs(x)), np.max(np.abs(y)), np.max(np.abs(z)))
-    st.info(f"{n}{orbital_names[l]} | (n,l,m) = ({n},{l},{m}) | {len(x):,}e | Extent: ~{max_extent:.2f}a₀ (Bohr Radii)")
+    st.info(f"{n}{orbital_names[l]} **Orbital** | (n,l,m) = ({n},{l},{m}) | {len(x):,}e | Extent: ~{max_extent:.2f} Bohr radii")
     
     # Create and display Three.js viewer with persistent camera state and sensitivities
     html_content = create_threejs_viewer(
